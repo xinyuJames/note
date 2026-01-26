@@ -50,11 +50,27 @@ We can calculate:
 - Controller: parse the logic address to physical address, and issue commands (like basic IO above) to DDR PHY
 - PHY: actual signal send to DRAM
 
+## Initialization Procedure
+
+Check JEDEC Standard Chapter 3.1 for State Diagram
+
 ### ZQ Calibration
 
 This can be used to calibrate internal banks of 240 ohm resistor, connected to DQ# pins, with external reference resistor.
 
 ### Vref DQ Calibration
+In DDR3, Vdd/2 is used to as a reference to determine if DQ is 1 or 0, which is called Center Tapped Termination (CTT), or Series-Stud Terminated Logic (SSTL).
+
+In DDR4, there is a internal voltage reference (VrefDQ) which can be used to decide DQ 1 or 0. VrefDQ can be set using MR6. This need to be set by memory controller during Vref DQ Calibration phase during initialization.
+
+### R/W Training
+
+For ASIC/Processors, each DRAM has different distance, so the skew between clock and data for each DRAM and DIMM is also different. We need to have internal circuit traning themselves to meet the write and read latency requirement. There are some algos that can do this.
+
+1. Write Leveling
+2. Multi-Purpose Register (MPR) Pattern Write
+3. Read Centering
+4. Write Centering
 
 
 ## Standard Reference (JEDEC)
