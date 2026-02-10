@@ -204,6 +204,32 @@ Example RTL, with control signals:
 
 ## Problem - RAW (LW-type)
 
+With __LW__, the forwarding method will not work, because the earliest data available is at __MEM/WB__, when the next operation already processed with ALU.
+
+![raw_lw](img/CmpO_RAW_LW.png)
+
+### Solution
+
+The only method we can use is to __Stall__, because of timing.
+
+### How
+
+We detect the hazard at __EXE__ stage, so the next instruction will not execute with wrong data. Since we need to __Inject__ NOP, we need to have control unit before the EXE stage, which is ID stage. 
+
+The __IF/ID__ latch should remain as it is, and __PC__ will stay unchanged. 
+
+We detect when we will need memory access, and the following instructions will use the rd.
+```
+ If(ID/EX.MemRead AND (ID/EX.RegRd = IF/ID.RegRs2 OR ID/EX.RegRd = IF/ID.RegRs1))
+```
+![ld_plot](img/CmpO_RAW_LW_plot.png)
+
+### Solution - compiler
+
+We can use the compiler inject NOP for us after each LW. We can bring unrelated (not depend on LW) to fill the NOP gap, which optimize the CPI.
+
+
+
 # Control Flow Hazard
 
 Attempt to make a decision before the condition is evaluated. 
