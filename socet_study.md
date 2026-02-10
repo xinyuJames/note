@@ -1,6 +1,6 @@
-## DRAM - Basic Knowledge
+# DRAM - Basic Knowledge
 
-Purdue SoCET - AI Hardware - DRAM Controller team. Studied with [this](https://www.systemverilog.io/tags/#ddr4) webpage.
+Studied with [this](https://www.systemverilog.io/tags/#ddr4) webpage.
 
 ### Basic IO
 
@@ -88,6 +88,8 @@ For ASIC/Processors, each DRAM has different distance, so the skew between clock
     - 3.5 Mode Register: set up different things
 - 4.1 Commands
 
+# DRAM Memory System Organization
+Studied through reading _Memory systems : cache, DRAM, disk by Jacob, Ng, and Wang_. Reference to the book pls.
 
 
 
