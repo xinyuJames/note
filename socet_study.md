@@ -25,6 +25,12 @@ Purdue SoCET - AI Hardware - DRAM Controller team. Studied with [this](https://w
 ### Single Storage Structure
 - wordline: row; bitline: column
 - Need to be refreshed: why it is called __Dynamic RAM__
+- Structure:
+    - Rank (each needs a Chip Select (CS))
+        - Bank Groups (BG)
+            - Banks
+                - Row / Page
+                    - single column
 - Steps:
     1. Activate; row select
     2. R/W; column select
@@ -75,6 +81,7 @@ For ASIC/Processors, each DRAM has different distance, so the skew between clock
 
 ## Standard Reference (JEDEC)
 - 2.7 Pinout Description
+- 2.8 Addressing Types Standard
 - 3.# Functions
     - 3.1 Functional State Diagram
     - 3.3 Initialization Process

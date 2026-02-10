@@ -2,9 +2,10 @@
 
 This is a course focus on Operating System, Adapted from MIT6.828, using JOS as primary lab materials. Other's [note](https://knowledgehive.github.io/6.828/). [Textbook](file/OS-11.07.23.v1.10.pdf).
 
-# Note
+# Learned in Labs
 
-## PC's physical address space.
+## Lab1
+### PC's physical address space.
 
     +------------------+  <- 0xFFFFFFFF (4GB)
     |      32-bit      |
@@ -37,19 +38,19 @@ This is a course focus on Operating System, Adapted from MIT6.828, using JOS as 
     +------------------+  <- 0x00000000
 
 
-## BIOS
+### BIOS
 The BIOS will handle __basic IO initialization__, and pass the process to the bootloader. 
 
 It used __16 bit real mode__, which uses physical memory directly.
 
-### Calculation
+#### Calculation
 The format is [segment:offset]. The final address = segment * 16 + offset or segment << 4 + offset.
 
-## Bootloader
+### Bootloader
 - 32bit protected mode, able to address 4GB space.
 - Use virtual memory, index using GDT (global descriptor table). Paging.
 
-### ELF
+#### ELF
 
 The ELF (Excutable and Linkable Format) is defined at `inc/elf.h`. It contains loading information. 
 
@@ -94,6 +95,182 @@ Program Header:
    STACK off    0x00000000 vaddr 0x00000000 paddr 0x00000000 align 2**4
          filesz 0x00000000 memsz 0x00000000 flags rwx
 ```
+
+
+
+
+### Kernel
+The bootloader will handle the process to the kernel.
+
+#### Stack
+
+The `stack` is initialized in `kern/entry.S`, as well as `ebp` and `eip`. The position is defined by `bootstack` and `bootstacktop` as descriped in `obj/kern/kernel.sym`.
+
+- `kern/entrypgdir.c` map virtual memory in the kernel, once paging enabled in `kern/entry.S`
+- `ebp`: a register stores info about base pointer, the position when function enters/
+- `eip`: a register stores info about instruction pointer, return address of a function call
+- `esp`: a register stores info about stack pointer moving along with function instructions.
+
+
+#### STAB
+ __Stab__ is a format to descript a program to a debugger. 
+
+ After running `objdump -h obj/boot/boot.out`, we see:
+ ```
+ 2 .stab         000006c0  00000000  00000000  0000029c  2**2
+                  CONTENTS, READONLY, DEBUGGING
+  3 .stabstr      00000466  00000000  00000000  0000095c  2**0
+                  CONTENTS, READONLY, DEBUGGING
+ ```
+ shows that the stab has ELF information during the boot. 
+
+ In kernel:
+ ```
+2 .stab         00003bc5  f0102238  00102238  00003238  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  3 .stabstr      000016f7  f0105dfd  00105dfd  00006dfd  2**0
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+ ```
+
+ We can observe kernel program information by running `objdump -G obj/kern/kernel | head -n 15` (first 15 lines):
+ ```
+ obj/kern/kernel:     file format elf32-i386
+
+Contents of .stab section:
+
+Symnum n_type n_othr n_desc n_value  n_strx String
+
+-1     HdrSym 0      1418   000017c8 1     
+0      SO     0      0      f0100000 1      {standard input}
+1      SOL    0      0      f010000c 18     kern/entry.S
+2      SLINE  0      44     f010000c 0      
+3      SLINE  0      57     f0100015 0      
+4      SLINE  0      58     f010001a 0      
+5      SLINE  0      60     f010001d 0      
+6      SLINE  0      61     f0100020 0
+ ```
+  The stabs layout is described above. More definitions are provided in `inc/elf.h`.
+  - `n_desc` may vary based on the types, but it means description of that type.
+  - `n_value` normally is address of where that is at, but may vary as well.
+  - `n_strx` is the offset of string description, like function name or source filename.
+
+### OS initialization process
+
+- BIOS Phase
+    - Power up
+    - Execute at [f000:fff0] and Jump to where BIOS code is at, in JOS, it will be [f000:e05b].
+    - Initialized peripheral devices, like keyboard. 
+    - The code will load the first sector (MBR: Master Boot Record) from the boot disk to RAM addr __0x7c00__.
+    - Jump to addr 0x7c00 to run the bootloader.
+
+![instructions](img/OS_first%20instructions.png)
+
+- Bootloader Phase
+    - Boot sector ends with magic word __0x55AA__.
+    - Switch processor mode. `boot/boot.S`
+    - Read 8 disk sectors to get ELF header data. `boot/main.c`
+
+    - Load segments from disk to mem, which contains actual kernel code + data. `boot/main.c`
+    - Jump to kernel entry, 0x10000C. Defined in `kern/Makefrag`, and information can be viewed in ELF section header.
+
+## Lab2 - Memory Management
+In this lab, we will map vitual memory to physical memory, and a lot of related operations.
+
+### Virtual Memory Space
+```
+Virtual memory map:                                Permissions
+                                                   kernel/user
+
+   4 Gig -------->  +------------------------------+
+                    |                              | RW/--
+                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                    :              .               :
+                    :              .               :
+                    :              .               :
+                    |~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~| RW/--
+                    |                              | RW/--
+                    |   Remapped Physical Memory   | RW/--
+                    |                              | RW/--
+   KERNBASE, ---->  +------------------------------+ 0xf0000000      --+
+   KSTACKTOP        |     CPU0's Kernel Stack      | RW/--  KSTKSIZE   |
+                    | - - - - - - - - - - - - - - -|                   |
+                    |      Invalid Memory (*)      | --/--  KSTKGAP    |
+                    +------------------------------+                   |
+                    |     CPU1's Kernel Stack      | RW/--  KSTKSIZE   |
+                    | - - - - - - - - - - - - - - -|                 PTSIZE
+                    |      Invalid Memory (*)      | --/--  KSTKGAP    |
+                    +------------------------------+                   |
+                    :              .               :                   |
+                    :              .               :                   |
+   MMIOLIM ------>  +------------------------------+ 0xefc00000      --+
+                    |       Memory-mapped I/O      | RW/--  PTSIZE
+ULIM, MMIOBASE -->  +------------------------------+ 0xef800000
+                    |  Cur. Page Table (User R-)   | R-/R-  PTSIZE
+   UVPT      ---->  +------------------------------+ 0xef400000
+                    |          RO PAGES            | R-/R-  PTSIZE
+   UPAGES    ---->  +------------------------------+ 0xef000000
+                    |           RO ENVS            | R-/R-  PTSIZE
+UTOP,UENVS ------>  +------------------------------+ 0xeec00000
+UXSTACKTOP -/       |     User Exception Stack     | RW/RW  PGSIZE
+                    +------------------------------+ 0xeebff000
+                    |       Empty Memory (*)       | --/--  PGSIZE
+   USTACKTOP  --->  +------------------------------+ 0xeebfe000
+                    |      Normal User Stack       | RW/RW  PGSIZE
+                    +------------------------------+ 0xeebfd000
+                    |                              |
+                    |                              |
+                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                    .                              .
+                    .                              .
+                    .                              .
+                    |~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~|
+                    |     Program Data & Heap      |
+   UTEXT -------->  +------------------------------+ 0x00800000
+   PFTEMP ------->  |       Empty Memory (*)       |        PTSIZE
+                    |                              |
+   UTEMP -------->  +------------------------------+ 0x00400000      --+
+                    |       Empty Memory (*)       |                   |
+                    | - - - - - - - - - - - - - - -|                   |
+                    |  User STAB Data (optional)   |                 PTSIZE
+   USTABDATA ---->  +------------------------------+ 0x00200000        |
+                    |       Empty Memory (*)       |                   |
+   0 ------------>  +------------------------------+                 --+
+
+(*) Note: The kernel ensures that "Invalid Memory" is *never* mapped.
+    "Empty Memory" is normally unmapped, but user programs may map pages
+    there if desired.  JOS user programs map pages temporarily at UTEMP.
+
+```
+
+The early boot relationship between virtual and physical is defined in `entrypgdir.c`, and we can also observe the paging layout in __qemu__ with `info pg` command. Since we are doing a MMU this lab, this structure will be polished through `mem_init` function.
+
+## Functions Confusing Points
+Only confusing idea is described here. The usage of each function is in the repo.
+
+### `static void boot_alloc(n)`
+
+We initialze `nextfree` pointer from the end of of `.bss`, where we can see the header ELF that there is a free space. Since this is initial mapping, so we only have 4MB of space above KERNBASE, we need to control the range within 4MB.
+
+### `void page_init()`
+
+We need to make space for IO, and which is descriped in physical layout from VGA Display to ROM. After this, we also need to avoid kernel setup space. `page_free_list` is a linkedList.
+
+### `pte_t* pgdir_walk(pde_t* pgdir, void* va, int create)`
+
+Pointer to pte of that va is returned. When we return, we have to use `KADDR()` to map into virtual address, because CPU can only process virtual address. 
+
+Page table page is also a 4KB page similar to va->pa mapping page. Therefore, we also use `page_alloc` for creating an empty page table page. The corresponding pde should include this page table page, after changing from `PageInfo*` to pa, with required permissions.
+
+### `int page_insert(pde_t *pgdir, struct PageInfo *pp, void *va, int perm)`
+
+Increment the `pp_ref` first, since we may accidentally free the pp when calling `page_remove`.
+
+
+
+
+
+
+# Learned in Lectures
 
 ## Protected Mode (slide 3)
 In real mode, if program A try to modify memory of program B, when they are running together, it will cause security issue. 
@@ -173,84 +350,9 @@ However, we need to access __3 times__ (page dir by cr3 + PT by page dir + addr 
 
 We need to __populate__ the TLB if no hit. We need to mark TLB entry invalid if we update Page Table Entry (PTE).
  
-## Kernel
-The bootloader will handle the process to the kernel.
-
-### Stack
-
-The `stack` is initialized in `kern/entry.S`, as well as `ebp` and `eip`.
-
-- `kern/entrypgdir.c` map virtual memory in the kernel, once paging enabled in `kern/entry.S`
-- `ebp`: base pointer, the position when function enters
-- `eip`: instruction pointer, return address of a function call
- 
-
-### STAB
- __Stab__ is a format to descript a program to a debugger. 
-
- After running `objdump -h obj/boot/boot.out`, we see:
- ```
- 2 .stab         000006c0  00000000  00000000  0000029c  2**2
-                  CONTENTS, READONLY, DEBUGGING
-  3 .stabstr      00000466  00000000  00000000  0000095c  2**0
-                  CONTENTS, READONLY, DEBUGGING
- ```
- shows that the stab has ELF information during the boot. 
-
- In kernel:
- ```
-2 .stab         00003bc5  f0102238  00102238  00003238  2**2
-                  CONTENTS, ALLOC, LOAD, READONLY, DATA
-  3 .stabstr      000016f7  f0105dfd  00105dfd  00006dfd  2**0
-                  CONTENTS, ALLOC, LOAD, READONLY, DATA
- ```
-
- We can observe kernel program information by running `objdump -G obj/kern/kernel | head -n 15` (first 15 lines):
- ```
- obj/kern/kernel:     file format elf32-i386
-
-Contents of .stab section:
-
-Symnum n_type n_othr n_desc n_value  n_strx String
-
--1     HdrSym 0      1418   000017c8 1     
-0      SO     0      0      f0100000 1      {standard input}
-1      SOL    0      0      f010000c 18     kern/entry.S
-2      SLINE  0      44     f010000c 0      
-3      SLINE  0      57     f0100015 0      
-4      SLINE  0      58     f010001a 0      
-5      SLINE  0      60     f010001d 0      
-6      SLINE  0      61     f0100020 0
- ```
-  The stabs layout is described above. More definitions are provided in `inc/elf.h`.
-  - `n_desc` may vary based on the types, but it means description of that type.
-  - `n_value` normally is address of where that is at, but may vary as well.
-  - `n_strx` is the offset of string description, like function name or source filename.
-
-## OS initialization process
-
-- BIOS Phase
-    - Power up
-    - Execute at [f000:fff0] and Jump to where BIOS code is at, in JOS, it will be [f000:e05b].
-    - Initialized peripheral devices, like keyboard. 
-    - The code will load the first sector (MBR: Master Boot Record) from the boot disk to RAM addr __0x7c00__.
-    - Jump to addr 0x7c00 to run the bootloader.
-
-![instructions](img/OS_first%20instructions.png)
-
-- Bootloader Phase
-    - Boot sector ends with magic word __0x55AA__.
-    - Switch processor mode. `boot/boot.S`
-    - Read 8 disk sectors to get ELF header data. `boot/main.c`
-
-    - Load segments from disk to mem, which contains actual kernel code + data. `boot/main.c`
-    - Jump to kernel entry, 0x10000C. Defined in `kern/Makefrag`, and information can be viewed in ELF section header.
 
 
-
-
-
-## Side Note
+# Side Note
 - `.out` file: linked executable
 - gdb: use `symbol-file` to let gdb know the function lines, calls, etc
 - gdb: use `x/10x addr` to examine 10 words from adder
@@ -265,6 +367,8 @@ They are different. I think may because at bootloader, the kernel isn't being lo
 After paging enabled, 0xF0100000 also has information at LMA. I think the problem will be at relocated tag, at line 74 in `kern/entry.S`, because it will relocate execution to VMA
 
 ### Lab2
+
+#### 
 
 
 
