@@ -232,7 +232,61 @@ We can use the compiler inject NOP for us after each LW. We can bring unrelated 
 
 # Control Flow Hazard
 
-Attempt to make a decision before the condition is evaluated. 
+Attempt to make a decision before the condition is evaluated.
+
+## Problem - Branch Decision and Timing
+
+The earliest time we will have branch target available for a __B-type/jal/jalr__ (any instruction that needs to interact with PC) is at the EXE stage. Therefore, we need to read from the EXE/MEM latch.
+
+![bh](img/CmpO_branch_hazard.png)
+
+If we try to solve this problem by stalling, we need to add three bubbles, to account for extra three instructions. As the pipeline stages increase, the number of bubbles will increase, because we need to make data available from the EXE stage to IF stage. A huge jump.
+
+### Solution 2 - Branch Logic Early (not good)
+
+We can bring the branch logic into the __ID__ stage, where we calculate the rdat directly from the register file. We are able to forward the branch target to the PC combinationally from the ID, so we eliminate two bubbles.
+
+However, when we recall the solution to __R-type RAW hazard__, where we forward the register data from __EXE/MEM__ latch to the ALU src. We cannot have the correct rdat with one bubble. We need two bubbles in case of dependency with R-type. Similar to LW, we need 2 bubbles. 
+
+### Solution 3 - Predict + Bubble/Sol#2
+
+We can predict that we __no take__ the branch, because there are a lot of loops in the software. 
+
+If we predict it correctly, there will be no bubble. If we predict wrong, we need to __NOP__ the predicted notake. 
+
+After this, we can 
+- use solution 2 to forward the branch target, which may use 1/2 bubbles. 
+- use solution 1, stalling, which will create 3 bubbles.
+
+![2+3](img/CmpO_branch_sol2+3.png)
+
+### How
+
+#### Dynamic Predictoin
+
+Apart from always take or always notake, we can use a FSM to keep history of predict history.
+
+![dynamic_predict](img/cmpO_dynamic_branch.png)
+
+__Problem__: If we choose Taken, how does the PC know where is the taken PC address?
+
+#### Branch Target Buffer
+
+In order to go the target, we can use a lookup table to see where we should go. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
