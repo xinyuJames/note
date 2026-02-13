@@ -244,6 +244,77 @@ UXSTACKTOP -/       |     User Exception Stack     | RW/RW  PGSIZE
 
 The early boot relationship between virtual and physical is defined in `entrypgdir.c`, and we can also observe the paging layout in __qemu__ with `info pg` command. Since we are doing a MMU this lab, this structure will be polished through `mem_init` function.
 
+### Initial Layout
+
+After commenting out `mem_init`, the every initial layout defined looks like:
+```
+[00000-003ff]  PDE[000]     ----A----P
+  [00000-000b7]  PTE[000-0b7] --------WP 00000-000b7
+  [000b8-000b8]  PTE[0b8]     ---DA---WP 000b8
+  [000b9-000ff]  PTE[0b9-0ff] --------WP 000b9-000ff
+  [00100-00103]  PTE[100-103] ----A---WP 00100-00103
+  [00104-00111]  PTE[104-111] --------WP 00104-00111
+  [00112-00112]  PTE[112]     ---DA---WP 00112
+  [00113-00113]  PTE[113]     --------WP 00113
+  [00114-00114]  PTE[114]     ---DA---WP 00114
+  [00115-00115]  PTE[115]     --------WP 00115
+  [00116-00116]  PTE[116]     ---DA---WP 00116
+  [00117-003ff]  PTE[117-3ff] --------WP 00117-003ff
+[f0000-f03ff]  PDE[3c0]     ----A---WP
+  [f0000-f00b7]  PTE[000-0b7] --------WP 00000-000b7
+  [f00b8-f00b8]  PTE[0b8]     ---DA---WP 000b8
+  [f00b9-f00ff]  PTE[0b9-0ff] --------WP 000b9-000ff
+  [f0100-f0103]  PTE[100-103] ----A---WP 00100-00103
+  [f0104-f0111]  PTE[104-111] --------WP 00104-00111
+  [f0112-f0112]  PTE[112]     ---DA---WP 00112
+  [f0113-f0113]  PTE[113]     --------WP 00113
+  [f0114-f0114]  PTE[114]     ---DA---WP 00114
+  [f0115-f0115]  PTE[115]     --------WP 00115
+  [f0116-f0116]  PTE[116]     ---DA---WP 00116
+  [f0117-f03ff]  PTE[117-3ff] --------WP 00117-003ff
+```
+There isn't really any user space or permission set. This is the result after `mem_init`:
+
+```
+[ef000-ef3ff]  PDE[3bc]     -------UWP
+  [ef000-ef03f]  PTE[000-03f] -------U-P 0011d-0015c
+[ef400-ef7ff]  PDE[3bd]     -------U-P
+  [ef7bc-ef7bc]  PTE[3bc]     -------UWP 003fd
+  [ef7bd-ef7bd]  PTE[3bd]     -------U-P 0011c
+  [ef7bf-ef7bf]  PTE[3bf]     -------UWP 003fe
+  [ef7c0-ef7df]  PTE[3c0-3df] ----A--UWP 003ff 003fc 003fb 003fa 003f9 003f8 ..
+  [ef7e0-ef7ff]  PTE[3e0-3ff] -------UWP 003dd 003dc 003db 003da 003d9 003d8 ..
+[efc00-effff]  PDE[3bf]     -------UWP
+  [efff8-effff]  PTE[3f8-3ff] --------WP 00110-00117
+[f0000-f03ff]  PDE[3c0]     ----A--UWP
+  [f0000-f0000]  PTE[000]     --------WP 00000
+  [f0001-f009f]  PTE[001-09f] ---DA---WP 00001-0009f
+  [f00a0-f00b7]  PTE[0a0-0b7] --------WP 000a0-000b7
+  [f00b8-f00b8]  PTE[0b8]     ---DA---WP 000b8
+  [f00b9-f00ff]  PTE[0b9-0ff] --------WP 000b9-000ff
+  [f0100-f0101]  PTE[100-101] ----A---WP 00100-00101
+  [f0102-f0102]  PTE[102]     --------WP 00102
+  [f0103-f0105]  PTE[103-105] ----A---WP 00103-00105
+  [f0106-f0116]  PTE[106-116] --------WP 00106-00116
+  [f0117-f0117]  PTE[117]     ---DA---WP 00117
+  [f0118-f0118]  PTE[118]     --------WP 00118
+  [f0119-f0119]  PTE[119]     ----A---WP 00119
+  [f011a-f011a]  PTE[11a]     --------WP 0011a
+  [f011b-f011c]  PTE[11b-11c] ---DA---WP 0011b-0011c
+  [f011d-f011d]  PTE[11d]     ----A---WP 0011d
+  [f011e-f011e]  PTE[11e]     ---DA---WP 0011e
+  [f011f-f015c]  PTE[11f-15c] ----A---WP 0011f-0015c
+  [f015d-f03bd]  PTE[15d-3bd] ---DA---WP 0015d-003bd
+  [f03be-f03ff]  PTE[3be-3ff] --------WP 003be-003ff
+[f0400-f7fff]  PDE[3c1-3df] ----A--UWP
+  [f0400-f7fff]  PTE[000-3ff] ---DA---WP 00400-07fff
+[f8000-fffff]  PDE[3e0-3ff] -------UWP
+  [f8000-fffff]  PTE[000-3ff] --------WP 08000-0ffff
+```
+
+WHY? `mem_init` will initialize the free_page_list, and everything is based on this. The `boot_map_region` will map virtual pages to the physical locations. `pgdir_walk` and other functions will work together to find the free spaces, provide PTEs, and map it. What if there's no enough physical pages for `mem_init`? JOS will just panic.
+
+
 ## Functions Confusing Points
 Only confusing idea is described here. The usage of each function is in the repo.
 
@@ -368,7 +439,23 @@ After paging enabled, 0xF0100000 also has information at LMA. I think the proble
 
 ### Lab2
 
-#### 
+#### EX5
+Q: Finish the table, where map to where?
+
+![map](img/OS_lab2_ex5.png)
+
+A: We can left shift the entry by 22 bits, and we can get VA initials. We use this VA reference into Virtual Mem Layout, and we can know where we're at.
+
+Q: What is the maximum amount of physical memory that this operating system can support? Why?
+
+A: For kernel is able to manipulate, above KERNBASE. Therefore, from 0xf0000000 to 0xffffffff (256MB).
+
+Q: What makes it possible for us to continue executing at a low EIP between when we enable paging and when we begin running at an EIP above KERNBASE?
+
+A: Mention that this line of code, enables a virtual mapping to the static declaration of kernel stack from `entry.S`, we they are in the same physical address, but we access it through VA from now.
+```
+boot_map_region(kern_pgdir, KSTACKTOP-KSTKSIZE, KSTKSIZE, PADDR(bootstack), PTE_W);
+```
 
 
 

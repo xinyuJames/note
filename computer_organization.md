@@ -264,7 +264,7 @@ After this, we can
 
 #### Dynamic Predictoin
 
-Apart from always take or always notake, we can use a FSM to keep history of predict history.
+Apart from always take or always notake, we can use a FSM to keep history of predict history, and make decisions based on it.
 
 ![dynamic_predict](img/cmpO_dynamic_branch.png)
 
@@ -273,6 +273,21 @@ __Problem__: If we choose Taken, how does the PC know where is the taken PC addr
 #### Branch Target Buffer
 
 In order to go the target, we can use a lookup table to see where we should go. 
+
+By having a BTB at the fetch stage, combining with the branch predictor, we are able to make the jump when Take decision is made. 
+
+![BTB](img/CmpO_BTB.png)
+
+### Solution 4 + 2 - Delayed Branch
+
+Combining with solution 2, moving the branch logic earlier, we are able to achieve no bubble by inserting instruction in one delayed block. 
+
+We need to make sure that the instruction selected for the slot needs to be independent of Take or No Take. Independent means that the destination of the slot cannot be the source for any choice (that rd is dead). 
+
+![delayed](img/CmpO_delayed_slot.png)
+
+
+
 
 
 
