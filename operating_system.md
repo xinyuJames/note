@@ -52,9 +52,9 @@ The format is [segment:offset]. The final address = segment * 16 + offset or seg
 
 #### ELF
 
-The ELF (Excutable and Linkable Format) is defined at `inc/elf.h`. It contains loading information. 
+The ELF (Excutable and Linkable Format) is defined at `inc/elf.h`. It contains loading information. ELF is use by the loader. 
 
-- ELF __Section Header__, which contains program layout, checked with `objdump -h obj/kern/kernel`. Example: `.rodata` means Read-only data; `.data`means data section holds the program’s initialized data; `.bss`means section reserved for uninitialized global variable...
+- ELF __Section Header__, which contains program layout, checked with `objdump -h obj/kern/kernel`. Example: `.text` is the machine code representation of each instruction. `.rodata` means Read-only data; `.data`means data section holds the program’s initialized data; `.bss`means section reserved for uninitialized global variable...
 
 ```
 Kernel Binary Layout:
@@ -316,6 +316,8 @@ WHY? `mem_init` will initialize the free_page_list, and everything is based on t
 
 
 ## Functions Confusing Points
+Mention that page dir, page table page, and va->pa mapping are all 4kb. 
+
 Only confusing idea is described here. The usage of each function is in the repo.
 
 ### `static void boot_alloc(n)`
@@ -349,6 +351,7 @@ In real mode, if program A try to modify memory of program B, when they are runn
 In protected mode, it will index from __logical address__ to __physical address__ through __Global Descriptor Table (GDT)__, which can save either __code__ or __data__.
 
 ### Segment Translation
+
 [selector:offset] = [0x0008:0x00003400] = GDT[1].base + 0x3400, if 0x3400 < limit.
 
 Every slot of GDT is a __Segment Descriptor__.
@@ -372,6 +375,14 @@ Every slot of GDT is a __Segment Descriptor__.
 ![descriptor](img/OS_segment_descriptor.png)
 ![ex1](img/OS_GDT_ex1.png)
 ![ex2](img/OS_GDT_ex2.png)
+
+### Privilege Level
+
+We have Three Privilege level: Descriptor (DPL), Current (CPL), and Request (RPL). DPL is stored in every entry of __GDT__, which is the minimum requirement for accessing linear address. 
+
+__RPL__ is the last two bit of the selectors in each of the registers, including CS, DS, ES, FS, GS, SS. The RPL stored in the CS register's selector section is called __CPL__. 
+
+RPL indicate caller's previlege level, and CPL indicate the privilege level of the one who access. For example, User use syscall, which RPL is user, and CPL is kernel. we need to use both to compare with DPL, PL in pte and pde. 
 
 ### Enable it
 We use Control Register 0 (CR0) to set Protected Enable (PE) bit. Code can be found in `boot/boot.S`
@@ -399,7 +410,7 @@ __Transparency__: Don't need to know system's internal state. Each program will 
 
 Therefore, even if they have same virtual memory, they can be mapped to different physical address. Once a library compiled, it can work for all programs. 
 
-__Efficiency__: Better use of free space. With Virtual Memory, we can have program themselves run in a contiguous memory space, where mapping to physical memory is actually scattered.
+__Efficiency__: Better use of free space. With Virtual Memory, we can have program themselves run in a contiguous memory space, where mapping to physical memory is actually scattered. Virtual Memory also allows N-to-1 mapping, which means same physical address can be visited by different processes with different Virtual address. For example, they both want to visit a library at a physical addr, an extra pte allows them visit at the same time. Therefore, one copy of a file is good enough for many programs is able to visit.
 
 __Protection__: Overflow of a program will not affect other programs, because they are in isolated working space. 
 
@@ -420,7 +431,26 @@ After getting __Logical Address__ from GDT, we now get __Linear Address__, the v
 However, we need to access __3 times__ (page dir by cr3 + PT by page dir + addr by PT) in order to get the physical address, which is VERY long. We can solve this with __Caching__. I think here is basically __Temporal Locality__, where we put recently accessed memory into a Translation Lookaside Buffer (TLB), and we can use only __1 time__ if we hit. 
 
 We need to __populate__ the TLB if no hit. We need to mark TLB entry invalid if we update Page Table Entry (PTE).
- 
+
+## Linker Basics (slide 6)
+
+The compiler doesn't know the final memory layout, where linker is required to allocate memory addresses.
+
+![linker](img/OS_linker.png)
+
+### After Compilation
+
+After compiling many files of the C code, there will be multiple Objest files. They contain __Symbol Table__ and __Relocation Information__.
+
+Symbol Table is recorded as `.symtab` in the ELF Header Section. The inside looks pretty much the same, like .text .bss, which contain information of the program.
+
+Relocation Information play as a flag and contains information for the linker to fix.
+
+### Two Pass
+
+The first pass, compiled object files, input segments, will be loaded and arranged into the same output object file, output segment. Total memory and function calls will be found through __libc__, and memory layout of every symbol will be calculated, Relocation Information will be resolved.
+
+The second pass, where linker will go through all the symbols and rewrite real addresses into the placeholders to make final excutable.
 
 
 # Side Note
