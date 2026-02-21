@@ -430,9 +430,11 @@ After getting __Logical Address__ from GDT, we now get __Linear Address__, the v
 
 However, we need to access __3 times__ (page dir by cr3 + PT by page dir + addr by PT) in order to get the physical address, which is VERY long. We can solve this with __Caching__. I think here is basically __Temporal Locality__, where we put recently accessed memory into a Translation Lookaside Buffer (TLB), and we can use only __1 time__ if we hit. 
 
-We need to __populate__ the TLB if no hit. We need to mark TLB entry invalid if we update Page Table Entry (PTE).
+We use Virtual Page Number to index into TLB, and offset pass through, because it's same as pa. Similar to Cache, where associativity, L1, L2 are introduces. 
 
-## Linker Basics (slide 6)
+We need to __populate__ the TLB if no hit. We need to mark TLB entry invalid if we update Page Table Entry (PTE). __Why__ we don't simply update it with correct value, like BTB does? Because Page mapping is a software-managed table, and it takes instruction communicating with the TLB. Therefore, a simple invalidate is cheaper than updating everytim.
+
+## Linker Basics (2/3)
 
 The compiler doesn't know the final memory layout, where linker is required to allocate memory addresses.
 
@@ -452,12 +454,39 @@ The first pass, compiled object files, input segments, will be loaded and arrang
 
 The second pass, where linker will go through all the symbols and rewrite real addresses into the placeholders to make final excutable.
 
+## Memory Swap (2/5)
+
+We use Virtual Address to access the Physical Address. When the PDE or PTE is not present, or when the RAM is full (PTE in this case), we need to make space for them by bringing them up to the RAM. 
+
+### Steps after Page Fault
+
+CR2 will provide into whether it is a PDE's problem or PTE's. We use the information to swap for PDE or PTE. They follow the same flow. 
+- Use methods to find a Victim Entry from the Directory or Table.
+- Load the Victim's information to the disk's Swap Partition area.
+- Use info in the not present entry to access disk for data.
+- load the data back to the RAM
+- restart the request from VA -> TLB -> ...
+
+![mem_swap](img/OS_memory_swap.png)
+
+### Methods of finding the Victim
+
+#### FIFO Structure, Belady's anomaly, Belady's Algo, FIFO with Second Change, Clock Structure
+
+The [ppt](file/OS_memory_swap.pdf) is good enough for explaining, from page 35.
+
+
+
+
+
 
 # Side Note
 - `.out` file: linked executable
 - gdb: use `symbol-file` to let gdb know the function lines, calls, etc
 - gdb: use `x/10x addr` to examine 10 words from adder
 - `CR0`: control register 0; `CR0_PG`: paging enable; `CR0_PE`: enable protected mode; `CR0_WP`: write protect, cannot write to RO pages.
+- `Eviction` meaning: throw out something, make something lower in the hierarchy. Like victim PTE written from DRAM to Disk. 
+- `Pressure` meaning: demand for a resources, like too many requests to DRAM...
 
 ### Lab1
 
